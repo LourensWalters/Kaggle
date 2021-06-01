@@ -1,0 +1,511 @@
+---
+title: "An Exploratory Data Analysis of the Best Las Vegas Restaurants"
+
+author: "Jessica Li"
+
+date: "31 March 2018"
+
+output: 
+
+  html_document:
+
+    number_sections: true
+
+    toc: true
+
+    theme: cerulean
+
+    code_folding: hide
+---
+
+***
+
+# Introduction
+
+***
+
+This is an preliminary Exploratory Data Analysis (EDA) of restaurants in Las Vegas using data provided by Yelp, specifically the yelp_business dataset. The aim is to pick apart the data, experiment, and use various forms of data visualization to better understand the food scene in Las Vegas. Furthermore, I am interested in finding which restaurants are, by different criteria, the "best" places to eat at in Las Vegas. 
+
+
+
+***
+
+# Data Preparation
+
+***
+
+Let's start by importing and getting a sense of the yelp_business dataset. 
+
+```{r}
+
+business <- read.csv("../input/yelp_business.csv", stringsAsFactors = FALSE)
+
+str(business)
+
+```
+
+This is a large dataset that spans over 11 metropolitan areas. For organization and processing time purposes we want to exclude irrelevant data. Trim dataset to only Las Vegas businesses.
+
+```{r}
+
+length(grep("Las Vegas", business$city))
+
+```
+
+This tells us there are 28,217 observations in the city category with Las Vegas. Thus, our trimmed dataset should have 28,217 rows. Crosscheck this with the data subset.
+
+```{r}
+
+vegasbusiness <- subset(business, city == "Las Vegas")
+
+dim(vegasbusiness)
+
+```
+
+After subsetting, we have a 26,775 rows in the new dataset. This disrepancy most likely occurred because the untrimmed dataset includes 1,442 entries that have Las Vegas as a substring. The grep in the length() function considers substrings and as such was able to detect these entries, unlike the subset. A table() search can ascertain this.
+
+```{r}
+
+table(business$city[grep("Las Vegas", business$city)]) 
+
+```
+
+Indeed, the data is not perfect. While most businesses list their location as Las Vegas, a select few specify a region of Las Vegas. There is also a typo for Las Vegas in one of the entries. For sake of consistency, rename all observations in the City variable that include the words Las Vegas to "Las Vegas" exactly.
+
+```{r}
+
+business$city[grep("Las Vegas", business$city)] <- "Las Vegas"
+
+vegasbusiness <- subset(business, city == "Las Vegas")
+
+dim(vegasbusiness)
+
+```
+
+Now vegasbusiness accurately records all Las Vegas businesses. Next, we want to subset the data again to only include restaurants or places that sell food since Yelp also records other types of busineses. This will be approximated by selecting businesses that include the tags "Food" and "Restaurants" in the Categories variable. Note that this won't be a perfect filter as some businesses may not be restaurants but still include at least one of these two tags (ex. grocery stores). For the purpose of this report, this level of precision will suffice.
+
+```{r}
+
+library(DT)
+
+vegasfood <- subset(vegasbusiness, grepl("Food|Restaurants", vegasbusiness$categories))
+
+datatable(head(vegasfood), style="bootstrap")
+
+dim(vegasfood)
+
+```
+
+We now have the analysis-ready vegasfood dataset which includes all Las Vegas restaurants. There are 8,060 recorded Las Vegas restaurants in this dataset.
+
+
+
+***
+
+# Data Analysis
+
+***
+
+***
+
+## Map of All Las Vegas Restaurants
+
+***
+
+A map visualization of the restaurants in Las Vegas can yield some spatial insights.
+
+```{r, warning = FALSE}
+
+library(leaflet)
+
+basemap <- addTiles(leaflet())
+
+vegasfoodmap <- addCircleMarkers(setView(basemap, lng=-115.2, lat=36.14,zoom = 11), lng = vegasfood$longitude, lat = vegasfood$latitude, radius = 1, fillOpacity = 6, color = "purple")
+
+vegasfoodmap
+
+```
+
+
+
+We can observe the street layout of Las Vegas with all the restaurants lined out. Areas with many restaurants could also suggest it is a social hub of some kind and give a rough sense of where activity in the city is. As expected, restaurants are densely concentrated down a street in central Las Vegas where the famous Las Vegas strip is located. 
+
+
+
+***
+
+## Most Frequent Restaurant Categories
+
+***
+
+Now we'll explore more deeply into what kinds of food are predominant in Las Vegas. The Category variable can provide some valuable insight. Run a search through the Categories variable for the top 20 most frequently used word tags used to describe restaurants.
+
+```{r}
+
+library(data.table)
+
+foodvector <- unlist(strsplit(vegasfood$categories, ";"))
+
+topfood <- head(sort(table(foodvector), decreasing = TRUE), n = 20)
+
+topfoodtable <- data.table(topfood)
+
+colnames(topfoodtable)[1] <- "Category"
+
+colnames(topfoodtable)[2] <- "Frequency"
+
+topfoodtable
+
+```
+
+
+
+***
+
+## Wordcloud of Top 20 Most Frequent Categories
+
+***
+
+A wordcloud of these most frequent categories can provide an informative graphic that instantly gives a general overview of the kinds of food in Las Vegas. Words like "restaurants" and "food" don't really tell us much so they are excluded. All category words with a minimum of 300 counts will be included in the wordcloud.
+
+```{r, message=FALSE}
+
+library(tm)
+
+library(wordcloud)
+
+unwanted <- c("Restaurants", "Food", "Shopping", "Specialty", "Grocery", "Convenience Stores", "event", "planning", "services", "new")
+
+sortedfoodvector <- removeWords(foodvector, unwanted)
+
+wordcloud(sortedfoodvector, min.freq = 300, ordered.colors = TRUE)
+
+```
+
+
+
+A glimpse of the wordcloud leads to the general observation that the Las Vegas food and social scene largely consists of nightlife, bars, and American food. Classics like pizza, burgers, and sandwiches dominate the space. Mexican food also seems to be a predominant theme. Analyzing word frequency in the context of a city space is interesting because it can also hint at what social activities and interests are popular.
+
+
+
+***
+
+## Bar Chart of Top 6 Frequent Cuisines
+
+***
+
+The table and wordcloud show that the top 6 frequent cuisines in Las Vegas are Mexican, American (Traditional and New), Chinese, Italian, and Japanese. Extract these cuisines for further analysis. The bar chart below shows the number of times each cuisine has been included in restaurants' categories.
+
+```{r, message=FALSE}
+
+library(ggplot2)
+
+top6cuisine <- topfoodtable[c(6,7,10,13,16,20),]
+
+ggplot(top6cuisine, aes(x = reorder(Category,Frequency), y = Frequency)) + geom_bar(stat = "identity", color = "grey", fill = "light green") + geom_text(aes(label = Frequency), hjust = 2, fontface ="bold") + coord_flip() + labs(title = "Top 6 Cuisines in Las Vegas", x = "Cuisine Type")
+
+```
+
+
+
+For latter analyses, traditional and new American cuisines will be combined into one cuisine. Though Mexican food comes at the top for this bar chart, together both types of American cuisine result in 1,410 counts which is almost double that of Mexican cuisine counts.
+
+
+
+***
+
+## Tables of Top 10 Restaurants By Star Rating For Each Cuisine
+
+***
+
+When it comes to determining the "best" restaurants, two common criteria are star ratings and review counts. The relationship between the two can be fickle. Popular restaurants with high review counts can sometimes experience lower star ratings due to the diverse customers that frequent it. For our analysis, we will start by finding the top 10 most highly star-rated restaurants for each top cuisine. Subset vegasfood into 5 datasets by cuisine. Note there are fewer American restaurants in this subset than the bar chart shows. This is because the bar chart double counted restaurants that may include both American cuisine tags. 
+
+
+
+```{r}
+
+vegasfood <- vegasfood[,c(2,4,5,6:10,11,13)]
+
+vegasmexican <- subset(vegasfood, grepl("^Mexican$|;Mexican|Mexican;", vegasfood$categories)) # One restaurant tagged as New Mexican Cuisine only is not included in this dataset
+
+vegasamerican <- subset(vegasfood, grepl("American", vegasfood$categories))
+
+vegaschinese <- subset(vegasfood, grepl("Chinese", vegasfood$categories))
+
+vegasitalian <- subset(vegasfood, grepl("Italian", vegasfood$categories))
+
+vegasjapanese <- subset(vegasfood, grepl("Japanese", vegasfood$categories))
+
+```
+
+
+
+Next, sort each cuisine dataset in decreasing order of star rating and extract the top 10 restaurants.
+
+```{r}
+
+topstarmexican <- head(vegasmexican[order(vegasmexican$stars, decreasing = TRUE),], n=10) 
+
+topstaramerican <- head(vegasamerican[order(vegasamerican$stars, decreasing = TRUE),], n=10)
+
+topstarchinese <- head(vegaschinese[order(vegaschinese$stars, decreasing = TRUE),], n=10)
+
+topstaritalian <- head(vegasitalian[order(vegasitalian$stars, decreasing = TRUE),], n=10)
+
+topstarjapanese <- head(vegasjapanese[order(vegasjapanese$stars, decreasing = TRUE),], n=10)
+
+# Sort doesn't work here because row numbers are required. Order gives ranking of numbers, ranking is implied in the order of the number itself.
+
+```
+
+
+
+Tables for top 10 restaurants by star rating for each cuisine are provided below.
+
+
+
+### Mexican Cuisine (Top 10 Star Ratings)
+
+```{r}
+
+datatable(topstarmexican, style="bootstrap", class="table-condensed")
+
+```
+
+
+
+### American Cuisine (Top 10 Star Ratings)
+
+```{r}
+
+datatable(topstaramerican, style="bootstrap", class="table-condensed")
+
+```
+
+
+
+### Chinese Cuisine (Top 10 Star Ratings)
+
+```{r}
+
+datatable(topstarchinese, style="bootstrap", class="table-condensed")
+
+```
+
+
+
+### Italian Cuisine (Top 10 Star Ratings)
+
+```{r}
+
+datatable(topstaritalian, style="bootstrap", class="table-condensed")
+
+```
+
+
+
+### Japanese Cuisine (Top 10 Star Ratings)
+
+```{r}
+
+datatable(topstarjapanese, style="bootstrap", class="table-condensed")
+
+```
+
+
+
+***
+
+## Tables of Top 10 Restaurants By Review Count For Each Cuisine
+
+***
+
+The same process is applied to the top 10 restaurants defined by review counts. Sort each cuisine dataset in decreasing order of review count and extract the top 10 restaurants.
+
+```{r}
+
+toprevmexican <- head(vegasmexican[order(vegasmexican$review_count, decreasing = TRUE),], n=10)
+
+toprevamerican <- head(vegasamerican[order(vegasamerican$review_count, decreasing = TRUE),], n=10)
+
+toprevchinese <- head(vegaschinese[order(vegaschinese$review_count, decreasing = TRUE),], n=10)
+
+toprevitalian <- head(vegasitalian[order(vegasitalian$review_count, decreasing = TRUE),], n=10)
+
+toprevjapanese <- head(vegasjapanese[order(vegasjapanese$review_count, decreasing = TRUE),], n=10)
+
+```
+
+
+
+Tables for top 10 restaurants review count for each cuisine are provided below.
+
+
+
+### Mexican Cuisine (Top 10 Review Counts)
+
+```{r}
+
+datatable(toprevmexican, style="bootstrap", class="table-condensed")
+
+```
+
+
+
+### American Cuisine (Top 10 Review Counts)
+
+```{r}
+
+datatable(toprevamerican, style="bootstrap", class="table-condensed")
+
+```
+
+
+
+### Chinese Cuisine (Top 10 Review Counts)
+
+```{r}
+
+datatable(toprevchinese, style="bootstrap", class="table-condensed")
+
+```
+
+
+
+### Italian Cuisine (Top 10 Review Counts)
+
+```{r}
+
+datatable(toprevitalian, style="bootstrap", class="table-condensed")
+
+```
+
+
+
+### Japanese Cuisine (Top 10 Review Counts)
+
+```{r}
+
+datatable(toprevjapanese, style="bootstrap", class="table-condensed")
+
+```
+
+
+
+***
+
+## Map of Top 10 Restaurants By Star Rating For Each Cuisine
+
+***
+
+Now that we know where are the best places to eat in Las Vegas, let's place them on a map. Starting off with top restaurants as defined by highest star ratings. Hover over the dropdown menu on the top right for the legend and turn cuisines on and off.
+
+```{r}
+
+topstarmap <- addProviderTiles(leaflet(), "Stamen.Toner", group = "OSM (default)")
+
+topstarmap <- addCircleMarkers(setView(topstarmap, lng=-115.14, lat=36.14,zoom = 11), lng = topstarmexican$longitude, lat = topstarmexican$latitude, color = "red", radius = 1, fillOpacity = 4, group = "Mexican (Red)")
+
+topstarmap <- addCircleMarkers(topstarmap, lng = topstaramerican$longitude, lat = topstaramerican$latitude, color = "orange", radius = 1, fillOpacity = 4, group = "American (Orange)")
+
+topstarmap <- addCircleMarkers(topstarmap, lng = topstarchinese$longitude, lat = topstarchinese$latitude, color = "yellow", radius = 1, fillOpacity = 4, group = "Chinese (Yellow)")
+
+topstarmap <- addCircleMarkers(topstarmap, lng = topstaritalian$longitude, lat = topstaritalian$latitude, color = "green", radius = 1, fillOpacity = 4, group = "Italian (Green)")
+
+topstarmap <- addCircleMarkers(topstarmap, lng = topstarjapanese$longitude, lat = topstarjapanese$latitude, color = "blue", radius = 1, fillOpacity = 4, group = "Japanese (Blue)")
+
+topstarmap <- addLayersControl(topstarmap, overlayGroups = c("Mexican", "American", "Chinese", "Italian", "Japanese"))
+
+topstarmap
+
+```
+
+
+
+```{r echo=FALSE}
+
+#Alternative map if given ggmap
+
+#library(ggmap)
+
+#lv <- get_googlemap(center=c(lon=-115.14, lat=36.16), zoom = 11, maptype = "roadmap")
+
+#vegasmap2 <- ggmap(lv)
+
+#vegasmap2 + geom_point(aes(x = longitude, y = latitude, color = "Mexican"), data = topstarmexican, size = 1) + geom_point(aes(x = longitude, y = latitude, color = "American"), data = topstaramerican, size = 1) + geom_point(aes(x = longitude, y = latitude, color = "Chinese"), data = topstarchinese, size = 1) + geom_point(aes(x = longitude, y = latitude, color = "Italian"), data = topstaritalian, size = 1) + geom_point(aes(x = longitude, y = latitude, color = "Japanese"), data = topstarjapanese, size = 1) + labs(title = "Top 10 Restaurants By Star Rating For Top 6 Cuisines In Las Vegas", fill = "Legend") + xlab("Longitude") + ylab("Latitude") + scale_color_manual(name="Legend",values=c("Mexican"="red", "American"="blue", "Chinese"="green", "Italian"="yellow", "Japanese"="orange"))
+
+a <- 1 + 1
+
+```
+
+
+
+***
+
+## Map of Top 10 Restaurants By Review Count For Each Cuisine
+
+***
+
+Mapping top restaurants by review count this time. Hover over the dropdown menu on the top right for the legend and turn cuisines on and off.
+
+```{r}
+
+toprevmap <- addProviderTiles(leaflet(), "Stamen.Toner", group = "OSM (default)")
+
+toprevmap <- addCircleMarkers(setView(toprevmap, lng=-115.14, lat=36.14, zoom = 11), lng = toprevmexican$longitude, lat = toprevmexican$latitude, color = "red", radius = 1, fillOpacity = 4, group = "Mexican (Red)")
+
+toprevmap <- addCircleMarkers(toprevmap, lng = toprevamerican$longitude, lat = toprevamerican$latitude, color = "orange", radius = 1, fillOpacity = 4, group = "American (Orange)")
+
+toprevmap <- addCircleMarkers(toprevmap, lng = toprevchinese$longitude, lat = toprevchinese$latitude, color = "yellow", radius = 1, fillOpacity = 4, group = "Chinese (Yellow)")
+
+toprevmap <- addCircleMarkers(toprevmap, lng = toprevitalian$longitude, lat = toprevitalian$latitude, color = "green", radius = 1, fillOpacity = 4, group = "Italian (Green)")
+
+toprevmap <- addCircleMarkers(toprevmap, lng = toprevjapanese$longitude, lat = toprevjapanese$latitude, color = "blue", radius = 1, fillOpacity = 4, group = "Japanese (Blue)")
+
+toprevmap <- addLayersControl(toprevmap, overlayGroups = c("Mexican (Red)", "American (Orange)", "Chinese (Yellow)", "Italian (Green)", "Japanese (Blue"))
+
+toprevmap
+
+```
+
+
+
+***
+
+## Map Comparing Top Restaurants By Star Rating Versus Review Count
+
+***
+
+Last but not least, let's compare the spatial distribution of top restaurants by star rating versus top restaurants by review count. Hover over the dropdown menu on the top right for the legend and turn cuisines on and off.
+
+```{r}
+
+topstarcuisine <- rbind(topstarmexican, topstaramerican, topstarchinese, topstaritalian, topstarjapanese)
+
+toprevcuisine <- rbind (toprevmexican, toprevamerican, toprevchinese, toprevitalian, toprevjapanese)
+
+topstarrevmap <- addProviderTiles(leaflet(), "OpenStreetMap.DE", group = "OSM (default)")
+
+topstarrevmap <- addCircleMarkers(setView(topstarrevmap, lng=-115.14, lat=36.14, zoom = 11), lng = topstarcuisine$longitude, lat = topstarcuisine$latitude, color = "red", radius = 1.5, fillOpacity = 4, group = "Top Restaurants By Star Rating (Red)")
+
+topstarrevmap <- addCircleMarkers(setView(topstarrevmap, lng=-115.14, lat=36.14, zoom = 11), lng = toprevcuisine$longitude, lat = toprevcuisine$latitude, color = "green", radius = 1.5, fillOpacity = 4, group = "Top Restaurants By Review Count (Green)")
+
+topstarrevmap <- addLayersControl(topstarrevmap, overlayGroups = c("Top Restaurants By Star Rating (Red)", "Top Restaurants By Review Count (Green)"))
+
+topstarrevmap
+
+```
+
+
+
+The top restaurants with highest star ratings are more dispersed over Las Vegas than those with high review counts. The lack of overlap between these two suggest that, interestingly, high star ratings don't have a strong correlation to high review counts. If a place is popular because the food is great, one can assume that it would have high star ratings and consequently attract more reviews. These two criteria intuitively seem to complement and feed off of each other. However, the data suggests otherwise. Looking at the tables of top restaurants by review count, one can see that the average star rating of these top restaurants is between 3.5 to 4 stars, which is rather mediocre. This could imply that as a restaurant attracts more reviews, the star rating tend to get pulled down. This is possibly due to the sheer diversity of people with differing tastes reviewing the same place, thus making a place more "controversial". From this, we can also intuitively hypothesize that in the particular situation if a restaurant has a high review count and a low star rating, the star rating is more negligible. That being said, the data is not sufficient enough to affirm the hypothesis.
+
+
+
+***
+
+# Conclusion
+
+***
+
+This exploratory data analysis of the restaurants in Las Vegas has resulted in many interesting insights. For one, the top 5 most frequent cuisines in Las Vegas are American, Mexican, Chinese, Italian, and Japanese in that respective order. For each cuisine, we were able to find the 10 best restaurants both in terms of highest star ratings and review counts. This report lists the information for these top restaurants in table form, which is great for readers to take note of the next time they visit Las Vegas and would like a data-science verified list of "best" restaurants to eat at. Last but not least, comparing the top restaurant lists given by highest rating versus highest review counts resulted in the observation that the two criteria don't appear to show strong correlation to each other. Restaurants with high review counts tended to have lower star ratings between 3.5-4. It has been great fun and a pleasure conducting this analysis. I would love to read your comments on the analysis, areas of improvement, and further analyses that could be possible with this data.
