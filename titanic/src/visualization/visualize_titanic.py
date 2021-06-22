@@ -2,10 +2,73 @@ import matplotlib.pyplot as plt
 import itertools
 import numpy as np
 import seaborn as sns
-from sklearn.metrics import auc
+from mlens.ensemble import SuperLearner
+from sklearn.ensemble import AdaBoostClassifier, BaggingClassifier, RandomForestClassifier, \
+    ExtraTreesClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import auc, accuracy_score
 from numpy import set_printoptions
 from sklearn.model_selection import learning_curve, validation_curve
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OrdinalEncoder
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
+from termcolor import cprint
+
+def pre_process_title(df):
+    df['title'] = df['name'].str.split(', ', expand=True)[1].str.split('.', expand=True)[0]
+    return df
+
+def pre_process_name(df):
+    df['first_name'] = df['name'].str.split(', ', expand=True)[1].str.split('.', expand=True)[1]
+    return df
+
+def pre_process_surname(df):
+    df['surname'] = df['name'].str.split(', ', expand=True)[0]
+    return df
+
+# Used to apply ordinal encoder to data in dataframe.
+
+def encode(data):
+    '''function to encode non-null data and replace it in the original data'''
+    encoder = OrdinalEncoder()
+    #retains only non-null values
+    nonulls = np.array(data.dropna())
+    #reshapes the data for encoding
+    impute_reshape = nonulls.reshape(-1,1)
+    #encode date
+    impute_ordinal = encoder.fit_transform(impute_reshape)
+    #Assign back encoded values to non-null values
+    data.loc[data.notnull()] = np.squeeze(impute_ordinal)
+    return data
+
+# These utility functions are used to build an ensemble pipeline which will be our final
+#  step in this pipeline adventure.
+
+def get_models():
+    models = list()
+    models.append(LogisticRegression(solver='liblinear'))
+    models.append(DecisionTreeClassifier())
+    models.append(SVC(gamma='scale', probability=True))
+    models.append(GaussianNB())
+    models.append(KNeighborsClassifier())
+    models.append(AdaBoostClassifier())
+    models.append(BaggingClassifier(n_estimators=10))
+    models.append(RandomForestClassifier(n_estimators=10))
+    models.append(ExtraTreesClassifier(n_estimators=10))
+    return models
+
+# create the super learner
+def get_super_learner(X):
+    ensemble = SuperLearner(scorer=accuracy_score, folds=10, shuffle=True, sample_size=len(X))
+    # add base models
+    models = get_models()
+    ensemble.add(models)
+    # add the meta model
+    ensemble.add_meta(LogisticRegression(solver='lbfgs'))
+    return ensemble
 
 def plot_learning_curve(estimator, title, X, y, axes=None, ylim=None, cv=None, n_jobs=None,
                         train_sizes=np.linspace(.1, 1.0, 5), learn_scoring=None, scoring_title="Score"):
@@ -209,34 +272,51 @@ def get_learning_curve(classifier, X_data, y_data, training_sizes=np.linspace(0.
 
     return
 
-def plot_confusion_matrix(cm, classes, normalize=False, title='Confusion matrix', cmap=plt.cm.Blues):
+def plot_confusion_matrix(cm, classes, cmap = plt.cm.Blues):
     """
     Creates a plot for the specified confusion matrix object and calculates relevant accuracy measures.
     """
 
-    # Add Normalization option
-    if normalize:
-        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-        print("Normalized confusion matrix")
-    else:
-        print('Confusion matrix, without normalization')
+    cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
 
-    plt.figure(figsize=(6, 6))
+    cprint('Confusion matrix, without normalisation', 'green')
+    print(cm)
+    cprint('Normalised confusion matrix', 'green')
+    print(np.around(cm_norm, decimals=2))
+
+    plt.figure(figsize=(13,13))
+    plt.subplot(221)
     plt.imshow(cm, interpolation='nearest', cmap=cmap)
-    plt.title(title, fontsize=18)
+    plt.title('Confusion matrix, \nwithout normalisation', size=15);
     plt.colorbar()
     tick_marks = np.arange(len(classes))
     plt.xticks(tick_marks, classes, fontsize=15)
     plt.yticks(tick_marks, classes, fontsize=15)
-
-    fmt = '.2f' if normalize else 'd'
+    fmt = 'd'
     thresh = cm.max() / 2.
     for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-        plt.text(j, i, format(cm[i, j], fmt), horizontalalignment="center", color="white" if cm[i, j] > thresh else "black", fontsize=18)
-
+        plt.text(j, i, format(cm[i, j], fmt), horizontalalignment="center", color="white"
+        if cm[i, j] > thresh else "black", fontsize=15)
+    plt.ylabel('True label', fontsize=15)
+    plt.xlabel('Predicted label', fontsize=15)
     plt.tight_layout()
-    plt.ylabel('True label', fontsize=18)
-    plt.xlabel('Predicted label', fontsize=18)
+
+    plt.subplot(222)
+    plt.imshow(cm_norm, interpolation='nearest', cmap=cmap)
+    plt.title('Normalised confusion matrix', size=15);
+    plt.colorbar()
+    tick_marks = np.arange(len(classes))
+    plt.xticks(tick_marks, classes, fontsize=15)
+    plt.yticks(tick_marks, classes, fontsize=15)
+    fmt = '.2f'
+    thresh = cm_norm.max() / 2.
+    for i, j in itertools.product(range(cm_norm.shape[0]), range(cm_norm.shape[1])):
+        plt.text(j, i, format(cm_norm[i, j], fmt), horizontalalignment="center",
+        color="white" if cm_norm[i, j] > thresh else "black", fontsize=15)
+    plt.ylabel('True label', fontsize=15)
+    plt.xlabel('Predicted label', fontsize=15)
+    plt.tight_layout()
+    plt.show()
 
     fp_label = 'false positive'
     fp = cm[0][1]
@@ -264,10 +344,20 @@ def plot_confusion_matrix(cm, classes, normalize=False, title='Confusion matrix'
 
     acc_score = round((tp + tn) / (tp + fp + tn + fn), 3)
 
-    print('\naccuracy:\t\t\t{}  \nprecision:\t\t\t{} \nsensitivity:\t\t\t{}'.format(acc_score, ppv, tpr))
-    print('\nspecificity:\t\t\t{} \nnegative predictive value:\t{}'.format(tnr, npv))
-    print('\nfalse positive rate:\t\t{}  \nfalse negative rate:\t\t{} \nfalse discovery rate:\t\t{}'.format(fpr, fnr,
-                                                                                                            fdr))
+    print('\nAccuracy:\t\t\t\t\t{:.2f}'.format(acc_score))
+
+    print('\nSensitivity/ Recall/ True Positive Rate:\t{:.2f}'.format(tpr))
+    print('\nSpecificity/ Selectivity/ True Negative Rate:\t{:.2f}'.format(tnr))
+
+    print('\n\nPositive Predictive Value/ Precision:\t\t{:.2f}'.format( ppv))
+    print('\nNegative Predictive value:\t\t\t{:.2f}'.format(npv))
+
+    print('\nFalse Positive rate/ Fall-out:\t\t\t{:.2f}'.format(fpr))
+    print('\nFalse Negative rate/ Miss Rate:\t\t\t{:.2f}'.format(fnr))
+
+    print('\nFalse Discovery rate:\t\t\t\t{:.2f}'.format(fdr))
+
+
 def plot_roc_curve(fpr, tpr, title="Receiver operating characteristic (ROC) Curve"):
     """
     Creates a plot for the specified roc curve object.
@@ -450,7 +540,7 @@ def main():
     cnf_matrix = confusion_matrix([0, 0, 1, 1], [0, 0, 1, 1])
 
     # generate plots
-    plot_confusion_matrix(cnf_matrix, classes=[0,1], normalize=True)
+    plot_confusion_matrix(cnf_matrix, classes=['Died', 'Survived'])
 
 if __name__ == "__main__":
     # call main
