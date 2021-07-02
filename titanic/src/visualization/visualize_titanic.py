@@ -18,15 +18,25 @@ from sklearn.tree import DecisionTreeClassifier
 from termcolor import cprint
 
 def pre_process_title(df):
-    df['title'] = df['name'].str.split(', ', expand=True)[1].str.split('.', expand=True)[0]
+    df['title'] = df['name'].str.split(', ', n = 1,
+                                       expand=True)[1].str.split(
+                                        '.',
+                                        n = 1,
+                                        expand=True)[0]
     return df
 
 def pre_process_name(df):
-    df['first_name'] = df['name'].str.split(', ', expand=True)[1].str.split('.', expand=True)[1]
+    df['first_name'] = df['name'].str.split(', ', n = 1,
+                                            expand=True)[1].str.split(
+                                            '.',
+                                            n = 1,
+                                            expand=True)[1]
     return df
 
 def pre_process_surname(df):
-    df['surname'] = df['name'].str.split(', ', expand=True)[0]
+    df['surname'] = df['name'].str.split(', ',
+                                         n = 1,
+                                         expand=True)[0]
     return df
 
 # Used to apply ordinal encoder to data in dataframe.
